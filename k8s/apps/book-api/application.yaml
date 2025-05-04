@@ -1,0 +1,58 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: book-library-api
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: book-library
+  source:
+    repoURL: https://github.com/yourusername/whole-cereal.git
+    targetRevision: HEAD
+    path: k8s/helm/book-library
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml  # Change this based on environment: values-dev.yaml, values-staging.yaml, or values-prod.yaml
+      parameters:
+        - name: image.repository
+          value: your-registry.azurecr.io/book-library-api
+        - name: env.database.password
+          value: YourStrongPassword123  # Consider using a secret management solution
+        - name: image.tag
+          value: "{{.Values.image.tag}}"  # Will be updated by Jenkins
+      version: v3
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: book-api
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/metrics/0/resource/target/averageUtilization
+        - /status
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: book-api
+  labels:
+    environment: production
+    app: book-library

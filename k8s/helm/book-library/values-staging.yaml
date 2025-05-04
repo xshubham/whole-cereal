@@ -1,0 +1,74 @@
+replicaCount: 2
+
+image:
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 1
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Staging specific environment variables
+env:
+  api:
+    title: "Book Library API (Staging)"
+  
+  database:
+    server: "mssql-staging.database"
+
+  opentelemetry:
+    serviceName: "book-library-api-staging"
+
+# Observability stack configurations for staging
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      size: 10Gi
+    retention: 15d
+
+loki:
+  enabled: true
+  persistence:
+    size: 10Gi
+  config:
+    limits_config:
+      retention_period: 168h
+
+tempo:
+  enabled: true
+  persistence:
+    size: 10Gi
+  retention: 72h
+
+grafana:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+  hosts:
+    - host: book-api-staging.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: book-api-staging-tls
+      hosts:
+        - book-api-staging.yourdomain.com

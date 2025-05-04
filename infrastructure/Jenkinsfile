@@ -1,0 +1,163 @@
+pipeline {
+    agent any
+
+    environment {
+        ARM_SUBSCRIPTION_ID = credentials('azure-subscription-id')
+        ARM_CLIENT_ID = credentials('azure-client-id')
+        ARM_CLIENT_SECRET = credentials('azure-client-secret')
+        ARM_TENANT_ID = credentials('azure-tenant-id')
+        TF_IN_AUTOMATION = 'true'
+    }
+
+    parameters {
+        choice(
+            name: 'WORKSPACE',
+            choices: ['dev', 'test', 'prod'],
+            description: 'Select the Terraform workspace/environment'
+        )
+        booleanParam(
+            name: 'DESTROY',
+            defaultValue: false,
+            description: 'Destroy the infrastructure?'
+        )
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                dir('terraform') {
+                    script {
+                        sh """
+                            terraform init \
+                            -backend-config=backend.tfvars \
+                            -input=false
+                        """
+                        
+                        // Select or create workspace
+                        sh """
+                            terraform workspace select ${params.WORKSPACE} || \
+                            terraform workspace new ${params.WORKSPACE}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Format Check') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform fmt -check -recursive'
+                }
+            }
+        }
+
+        stage('Terraform Validate') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform validate'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                dir('terraform') {
+                    script {
+                        if (params.DESTROY) {
+                            sh "terraform plan -destroy -out=tfplan -var-file=${params.WORKSPACE}.tfvars"
+                        } else {
+                            sh "terraform plan -out=tfplan -var-file=${params.WORKSPACE}.tfvars"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Review Plan') {
+            when {
+                expression { params.WORKSPACE == 'prod' }
+            }
+            steps {
+                input(
+                    message: 'Review the plan',
+                    ok: 'Apply',
+                    submitter: 'admin'
+                )
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                dir('terraform') {
+                    script {
+                        sh 'terraform apply -auto-approve tfplan'
+                    }
+                }
+            }
+        }
+
+        stage('Verify Infrastructure') {
+            steps {
+                dir('terraform') {
+                    script {
+                        // Get AKS cluster credentials
+                        def clusterName = sh(
+                            script: 'terraform output -raw aks_cluster_name',
+                            returnStdout: true
+                        ).trim()
+                        
+                        def resourceGroup = sh(
+                            script: 'terraform output -raw resource_group_name',
+                            returnStdout: true
+                        ).trim()
+                        
+                        // Verify AKS cluster is accessible
+                        sh """
+                            az aks get-credentials \
+                                --resource-group ${resourceGroup} \
+                                --name ${clusterName} \
+                                --overwrite-existing
+                            
+                            kubectl cluster-info
+                            kubectl get nodes
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean workspace
+            cleanWs()
+        }
+        success {
+            script {
+                if (params.WORKSPACE == 'prod') {
+                    // Notify on successful prod deployment
+                    emailext(
+                        subject: "Infrastructure deployment successful - ${params.WORKSPACE}",
+                        body: """Infrastructure deployment to ${params.WORKSPACE} completed successfully.
+                        Build URL: ${env.BUILD_URL}""",
+                        to: 'infrastructure-team@yourdomain.com'
+                    )
+                }
+            }
+        }
+        failure {
+            emailext(
+                subject: "Infrastructure deployment failed - ${params.WORKSPACE}",
+                body: """Infrastructure deployment to ${params.WORKSPACE} failed.
+                Build URL: ${env.BUILD_URL}""",
+                to: 'infrastructure-team@yourdomain.com'
+            )
+        }
+    }
+}

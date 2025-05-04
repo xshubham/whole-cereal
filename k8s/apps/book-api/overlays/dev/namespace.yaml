@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: book-api-dev
+  labels:
+    environment: dev
+    istio-injection: enabled  # If using Istio
+    argocd.argoproj.io/managed-by: argocd

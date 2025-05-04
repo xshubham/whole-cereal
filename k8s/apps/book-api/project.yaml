@@ -1,0 +1,67 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: book-library
+  namespace: argocd
+spec:
+  description: Book Library API Project
+  
+  # Source Repositories
+  sourceRepos:
+    - 'https://github.com/yourusername/whole-cereal.git'  # Change this to your repo
+  
+  # Destination Rules
+  destinations:
+    - namespace: book-api
+      server: https://kubernetes.default.svc
+    - namespace: observability
+      server: https://kubernetes.default.svc
+  
+  # Cluster Resource Whitelist
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+
+  # Namespace Resource Whitelist
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: Deployment
+    - group: '*'
+      kind: Service
+    - group: '*'
+      kind: ConfigMap
+    - group: '*'
+      kind: Secret
+    - group: '*'
+      kind: PersistentVolumeClaim
+    - group: 'networking.k8s.io'
+      kind: Ingress
+    
+  # Role Bindings
+  roles:
+    - name: read-only
+      description: Read-only privileges to book-library project
+      policies:
+        - p, proj:book-library:read-only, applications, get, book-library/*, allow
+        - p, proj:book-library:read-only, applications, sync, book-library/*, deny
+    
+    - name: project-admin
+      description: Project admin privileges
+      policies:
+        - p, proj:book-library:project-admin, applications, *, book-library/*, allow
+  
+  # Sync Windows
+  syncWindows:
+    - kind: allow
+      schedule: '0 2 * * *'  # Daily at 2 AM
+      duration: 1h
+      applications:
+        - '*-prod'  # Only allow prod syncs during maintenance window
+    
+  # Resource Tracking Method
+  orphanedResources:
+    warn: true
+    ignore:
+      - group: 'batch'
+        kind: 'Job'
+        name: '*'

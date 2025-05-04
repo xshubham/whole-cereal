@@ -1,0 +1,163 @@
+services:
+  loki-init:
+    image: &lokiImage grafana/loki:3.5.0
+    user: root
+    entrypoint:
+      - "chown"
+      - "10001:10001"
+      - "/data/loki"
+    volumes:
+      - loki_data:/data/loki
+
+  loki:
+    image: *lokiImage
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml
+      - loki_data:/data/loki
+    depends_on:
+      - loki-init
+
+  tempo-init:
+    image: &tempoImage grafana/tempo:2.7.2
+    user: root
+    entrypoint:
+      - "chown"
+      - "10001:10001"
+      - "/var/tempo"
+    volumes:
+      - tempo_data:/var/tempo
+
+  tempo:
+    image: *tempoImage
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo/tempo.yaml
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+    depends_on:
+      - tempo-init
+
+  opentelemetry-collector:
+    image: otel/opentelemetry-collector-contrib:0.88.0
+    command: ["--config=/etc/otel/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP http receiver
+      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - "8889:8889"   # Prometheus exporter metrics
+    depends_on:
+      - tempo
+      - loki
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.3.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+      - --enable-feature=native-histograms
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      - opentelemetry-collector
+    restart: unless-stopped
+
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourStrongPassword123
+      - MSSQL_PID=Developer
+    volumes:
+      - ./src/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./src/db/entrypoint.sh:/entrypoint.sh
+      - sqlserver_data:/var/opt/mssql:rw
+    command: /bin/bash /entrypoint.sh
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrongPassword123" -No -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # API Settings
+      - API_TITLE=Book Library API
+      - PORT=8000
+      - HOST=0.0.0.0
+      # Security Settings
+      - SECRET_KEY=your-secret-key-keep-it-secret
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      # Database Settings
+      - DB_SERVER=db
+      - DB_NAME=BookLibraryDB
+      - DB_USER=sa
+      - DB_PASSWORD=YourStrongPassword123
+      - DB_DRIVER=ODBC Driver 18 for SQL Server
+      # OpenTelemetry Settings
+      - OTEL_SERVICE_NAME=book-library-api
+      - OTEL_COLLECTOR_ENDPOINT=http://opentelemetry-collector:4317
+      - OTEL_INSECURE=true
+    depends_on:
+      db:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:11.6.1
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+
+volumes:
+  sqlserver_data:
+  prometheus_data:
+  tempo_data:
+  loki_data:
+  grafana_data:
+
+networks:
+  backend: {}
+  frontend: {}

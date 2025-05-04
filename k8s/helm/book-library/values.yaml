@@ -1,0 +1,140 @@
+replicaCount: 2
+
+image:
+  repository: your-registry.azurecr.io/book-library-api
+  tag: latest
+  pullPolicy: Always
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+resources:
+  limits:
+    cpu: 1
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+# Autoscaling configuration
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+env:
+  api:
+    title: "Book Library API"
+    port: 8000
+    host: "0.0.0.0"
+  
+  security:
+    secretKey: ""
+    accessTokenExpireMinutes: 30
+  
+  database:
+    server: "mssql.database"
+    name: "BookLibraryDB"
+    user: "sa"
+    password: ""
+    driver: "ODBC Driver 17 for SQL Server"
+
+  opentelemetry:
+    serviceName: "book-library-api"
+    collectorEndpoint: "http://opentelemetry-collector.observability:4317"
+    insecure: true
+
+# Observability Stack Configuration
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      size: 10Gi
+    retention: 15d
+
+loki:
+  enabled: true
+  persistence:
+    size: 10Gi
+  config:
+    limits_config:
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+
+tempo:
+  enabled: true
+  persistence:
+    size: 10Gi
+  retention: 48h
+
+grafana:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+  adminUser: admin
+  adminPassword: ""  # Will be auto-generated if not set
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://{{ .Release.Name }}-prometheus-server
+          isDefault: true
+        - name: Loki
+          type: loki
+          url: http://{{ .Release.Name }}-loki:3100
+        - name: Tempo
+          type: tempo
+          url: http://{{ .Release.Name }}-tempo:3200
+          jsonData:
+            httpMethod: GET
+            serviceMap:
+              datasourceUid: prometheus

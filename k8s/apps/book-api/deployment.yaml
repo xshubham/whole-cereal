@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: book-library-api
+  namespace: book-api
+  labels:
+    app: book-library-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: book-library-api
+  template:
+    metadata:
+      labels:
+        app: book-library-api
+    spec:
+      containers:
+        - name: book-library-api
+          image: your-registry.azurecr.io/book-library-api:latest  # This will be updated by Jenkins
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DB_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: book-api-config
+                  key: db_server
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: book-api-config
+                  key: db_name
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: book-api-secrets
+                  key: db_user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: book-api-secrets
+                  key: db_password
+            - name: OTEL_SERVICE_NAME
+              value: "book-library-api"
+            - name: OTEL_COLLECTOR_ENDPOINT
+              value: "http://opentelemetry-collector.observability:4317"
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: book-library-api
+  namespace: book-api
+spec:
+  selector:
+    app: book-library-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: book-api-config
+  namespace: book-api
+data:
+  db_server: "mssql.database"  # Update this with your DB server
+  db_name: "BookLibraryDB"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: book-api-secrets
+  namespace: book-api
+type: Opaque
+stringData:
+  db_user: "sa"  # Update this
+  db_password: "YourStrongPassword123"  # Update this

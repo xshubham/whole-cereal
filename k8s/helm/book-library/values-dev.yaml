@@ -1,0 +1,61 @@
+replicaCount: 1
+
+image:
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+
+# Development specific environment variables
+env:
+  api:
+    title: "Book Library API (Dev)"
+  
+  database:
+    server: "mssql-dev.database"
+
+  opentelemetry:
+    serviceName: "book-library-api-dev"
+
+# Observability stack configurations for dev
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      size: 5Gi
+    retention: 7d
+
+loki:
+  enabled: true
+  persistence:
+    size: 5Gi
+
+tempo:
+  enabled: true
+  persistence:
+    size: 5Gi
+
+grafana:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 5Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    - host: book-api-dev.local
+      paths:
+        - path: /
+          pathType: Prefix

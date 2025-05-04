@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "book-library.fullname" . }}
+  labels:
+    {{- include "book-library.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "book-library.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "book-library.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "book-library.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.env.api.port }}
+          env:
+            - name: API_TITLE
+              value: {{ .Values.env.api.title | quote }}
+            - name: PORT
+              value: {{ .Values.env.api.port | quote }}
+            - name: HOST
+              value: {{ .Values.env.api.host | quote }}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "book-library.fullname" . }}
+                  key: secret-key
+            - name: ACCESS_TOKEN_EXPIRE_MINUTES
+              value: {{ .Values.env.security.accessTokenExpireMinutes | quote }}
+            - name: DB_SERVER
+              value: {{ .Values.env.database.server | quote }}
+            - name: DB_NAME
+              value: {{ .Values.env.database.name | quote }}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "book-library.fullname" . }}
+                  key: db-user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "book-library.fullname" . }}
+                  key: db-password
+            - name: DB_DRIVER
+              value: {{ .Values.env.database.driver | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.env.opentelemetry.serviceName | quote }}
+            - name: OTEL_COLLECTOR_ENDPOINT
+              value: {{ .Values.env.opentelemetry.collectorEndpoint | quote }}
+            - name: OTEL_INSECURE
+              value: {{ .Values.env.opentelemetry.insecure | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.env.api.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.env.api.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

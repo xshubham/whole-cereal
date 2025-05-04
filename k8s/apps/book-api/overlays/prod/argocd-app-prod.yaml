@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: book-library-prod
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.slack: "deployments-channel"
+spec:
+  project: book-library
+  source:
+    repoURL: https://github.com/yourusername/whole-cereal.git
+    targetRevision: HEAD
+    path: k8s/apps/book-api/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: book-api-prod
+  syncPolicy:
+    automated: false  # Disable auto-sync for production
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true  # Ensure old resources are removed last
+      - Replace=false   # Don't replace resources, update them
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

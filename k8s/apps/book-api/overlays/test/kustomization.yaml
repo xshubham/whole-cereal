@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: book-api-test
+
+resources:
+- ../../base
+- namespace.yaml
+
+commonLabels:
+  environment: test
+
+images:
+- name: book-api
+  newTag: stable
+
+patchesStrategicMerge:
+- |-
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: book-api
+  spec:
+    replicas: 2
+    template:
+      spec:
+        containers:
+        - name: book-api
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"

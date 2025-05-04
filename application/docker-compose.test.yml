@@ -1,0 +1,37 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${TEST_DB_PASSWORD:-YourStrongPassword123}
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "$$SA_PASSWORD" -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  wait-for-db:
+    image: mcr.microsoft.com/mssql-tools
+    depends_on:
+      - db
+    command: >
+      /bin/bash -c '
+      for i in {1..30};
+      do
+        if /opt/mssql-tools/bin/sqlcmd -S db -U sa -P $$SA_PASSWORD -Q "SELECT 1" > /dev/null 2>&1;
+        then
+          echo "Database is ready!"
+          exit 0
+        fi
+        echo "Waiting for database..."
+        sleep 1
+      done
+      echo "Database connection timeout"
+      exit 1
+      '
+    environment:
+      - SA_PASSWORD=${TEST_DB_PASSWORD:-YourStrongPassword123}

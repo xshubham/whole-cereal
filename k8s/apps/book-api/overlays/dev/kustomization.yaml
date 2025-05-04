@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: book-api-dev
+
+resources:
+- ../../base
+- namespace.yaml
+
+patches:
+- path: resource-patch.yaml
+
+commonLabels:
+  environment: dev
+
+images:
+- name: book-api
+  newTag: latest
