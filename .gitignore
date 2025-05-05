@@ -64,3 +64,6 @@ MANIFEST
 **/*.tfstate
 **/*.tfstate.*
 **/.terraform.lock.hcl
+
+# Certificates
+**/*.crt
