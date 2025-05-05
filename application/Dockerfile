@@ -1,6 +1,9 @@
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 WORKDIR /app
+
+COPY ["./local_ca_root.crt", "/usr/local/share/ca-certificates"]
+RUN update-ca-certificates
 
 # Install system dependencies including SQL Server ODBC Driver
 RUN apt-get update && apt-get install -y \
